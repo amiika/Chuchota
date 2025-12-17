@@ -4,17 +4,22 @@ export const STORE_NAME = 'ipa_mappings';
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
+/**
+ * Opens the IndexedDB and caches the promise to ensure a singleton connection.
+ */
 export async function openDB(): Promise<IDBDatabase> {
   if (dbPromise) return dbPromise;
 
   dbPromise = new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, 1);
+    
     request.onupgradeneeded = () => {
       const db = request.result;
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         db.createObjectStore(STORE_NAME, { keyPath: ['lang', 'word'] });
       }
     };
+
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => {
       dbPromise = null;
@@ -47,9 +52,9 @@ export async function getIPAFromDB(word: string, lang: string): Promise<string |
     const store = tx.objectStore(STORE_NAME);
     const request = store.get([lang, word.toLowerCase()]);
     
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
       request.onsuccess = () => resolve(request.result?.ipa);
-      request.onerror = () => resolve(undefined); // Fail silently to allow rule-based fallback
+      request.onerror = () => resolve(undefined);
     });
   } catch (e) {
     return undefined;
