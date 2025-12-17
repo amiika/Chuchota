@@ -8,4 +8,5 @@ WIP. Proof of Concept.
 
 * [Dennis H. Klatt](https://en.wikipedia.org/wiki/Dennis_H._Klatt)
 * [NVSpeechPlayer](https://github.com/nvaccess/NVSpeechPlayer)
+* [IPA-Dict](https://github.com/open-dict-data/ipa-dict)
 * Gemini
