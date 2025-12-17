@@ -6,7 +6,7 @@ import { VoiceConfig } from './types';
 import { PERSONAS } from './services/personas';
 import { bufferToWave } from './services/audioUtils';
 import { IPA_DATA } from './services/ipaData';
-import { isLanguagePopulated, seedLanguage } from './services/db';
+import { syncDictionaries } from './services/dictionaryManager';
 
 import { Header } from './components/Header';
 import { HelpModal } from './components/HelpModal';
@@ -31,32 +31,12 @@ const App: React.FC = () => {
   const [personaCopied, setPersonaCopied] = useState(false);
   const [displayIpa, setDisplayIpa] = useState('');
 
-  // Initialize DB in background - Parallelized for speed
+  // Trigger background dictionary sync
   useEffect(() => {
-    const init = async () => {
-      const langs: Language[] = ['en', 'fr', 'fi', 'ja'];
-      
-      try {
-        await Promise.all(langs.map(async (lang) => {
-          const populated = await isLanguagePopulated(lang);
-          if (!populated) {
-            const resp = await fetch(`dictionaries/${lang}.json`);
-            if (resp.ok) {
-              const data = await resp.json();
-              await seedLanguage(lang, data);
-            }
-          }
-        }));
-      } catch (e) {
-        console.warn("Background dictionary sync interrupted, falling back to rules.", e);
-      } finally {
-        setDbInitializing(false);
-      }
-    };
-    init();
+    syncDictionaries().finally(() => setDbInitializing(false));
   }, []);
 
-  // Async IPA Preview
+  // Update IPA preview on text/language changes
   useEffect(() => {
     let active = true;
     const update = async () => {
@@ -71,7 +51,7 @@ const App: React.FC = () => {
     return () => { active = false; };
   }, [text, language, isIpaMode]);
 
-  // Handlers
+  // Synthesis Handler - Never blocks on dbInitializing
   const handleSynthesize = async () => {
     if (!text) return;
     setLoading(true);
@@ -80,29 +60,24 @@ const App: React.FC = () => {
     setChannelData(null);
 
     try {
-      // Synthesis proceeds regardless of dbInitializing state
-      // convertToIPA handles the fallback internally
+      // renderAudio uses convertToIPA internally which handles rule-based fallback
       const buffer = await renderAudio(text, config, language, isIpaMode);
-      processAudioBuffer(buffer);
+      const data = buffer.getChannelData(0);
+      const wavBlob = bufferToWave(buffer, data.length);
+      const url = URL.createObjectURL(wavBlob);
+      
+      setChannelData(data);
+      setAudioUrl(url);
     } catch (err) {
       console.error(err);
       setError("Synthesis Error: " + (err as Error).message);
+    } finally {
       setLoading(false);
     }
   };
 
-  const processAudioBuffer = (buffer: AudioBuffer) => {
-    const data = buffer.getChannelData(0);
-    const wavBlob = bufferToWave(buffer, data.length);
-    const url = URL.createObjectURL(wavBlob);
-    
-    setChannelData(data);
-    setAudioUrl(url);
-    setLoading(false);
-  };
-
   const updateConfig = (key: keyof VoiceConfig, value: any) => {
-      setConfig(prev => ({ ...prev, [key]: value }));
+    setConfig(prev => ({ ...prev, [key]: value }));
   };
 
   const updatePhonemeOverride = useCallback((char: string, key: string, value: any) => {
@@ -122,7 +97,7 @@ const App: React.FC = () => {
   }, []);
 
   const applyPreset = (name: string) => {
-      setConfig(JSON.parse(JSON.stringify(PERSONAS[name])));
+    setConfig(JSON.parse(JSON.stringify(PERSONAS[name])));
   };
 
   const resetConfig = () => {
