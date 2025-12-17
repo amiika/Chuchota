@@ -1,4 +1,3 @@
-// Ported from NV Speech Player data.py
 // Acoustic definition for IPA symbols
 
 export interface KlattFrame {
