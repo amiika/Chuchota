@@ -21,7 +21,8 @@ export async function syncDictionaries(onProgress?: (lang: Language) => void): P
       }
 
       console.log(`[Chuchota] Downloading dictionary: ${lang}...`);
-      const response = await fetch(`dictionaries/${lang}.json`);
+      // Use relative path to ensure it works on subfolder deployments
+      const response = await fetch(`./dictionaries/${lang}.json`);
       
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
