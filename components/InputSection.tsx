@@ -1,5 +1,6 @@
+
 import React from 'react';
-import { Globe, Keyboard, Languages, Wand2 } from 'lucide-react';
+import { Globe, Keyboard, Languages, Wand2, Database } from 'lucide-react';
 import { Language, LANGUAGES } from '../services/textToIpa';
 import { IPA_DATA } from '../services/ipaData';
 import { VoiceConfig } from '../types';
@@ -12,6 +13,7 @@ interface InputSectionProps {
     isIpaMode: boolean;
     setIsIpaMode: (b: boolean) => void;
     loading: boolean;
+    dbInitializing?: boolean;
     error: string | null;
     displayIpa: string;
     selectedIpa: string;
@@ -22,7 +24,7 @@ interface InputSectionProps {
 
 export const InputSection: React.FC<InputSectionProps> = ({
     text, setText, language, setLanguage, isIpaMode, setIsIpaMode,
-    loading, error, displayIpa, selectedIpa, setSelectedIpa, config,
+    loading, dbInitializing, error, displayIpa, selectedIpa, setSelectedIpa, config,
     onSynthesize
 }) => {
     return (
@@ -99,7 +101,15 @@ export const InputSection: React.FC<InputSectionProps> = ({
                     )}
 
                     {/* Action Buttons Row */}
-                    <div className="flex items-center gap-3 justify-end">
+                    <div className="flex items-center gap-3 justify-between">
+                        <div className="flex items-center gap-2">
+                             {dbInitializing && (
+                                <div className="flex items-center gap-2 px-3 py-1 bg-slate-700/50 rounded-full border border-slate-600/50 animate-pulse">
+                                    <Database className="w-3 h-3 text-cyan-400" />
+                                    <span className="text-[10px] text-slate-400 font-mono uppercase tracking-tighter">Initializing Dictionaries...</span>
+                                </div>
+                             )}
+                        </div>
                         <button 
                             onClick={onSynthesize}
                             disabled={loading || !text}
