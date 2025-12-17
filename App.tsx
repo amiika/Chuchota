@@ -31,26 +31,27 @@ const App: React.FC = () => {
   const [personaCopied, setPersonaCopied] = useState(false);
   const [displayIpa, setDisplayIpa] = useState('');
 
-  // Initialize DB
+  // Initialize DB in background - Parallelized for speed
   useEffect(() => {
     const init = async () => {
       const langs: Language[] = ['en', 'fr', 'fi', 'ja'];
-      for (const lang of langs) {
-        const populated = await isLanguagePopulated(lang);
-        if (!populated) {
-          console.log(`Loading dictionary for ${lang}...`);
-          try {
+      
+      try {
+        await Promise.all(langs.map(async (lang) => {
+          const populated = await isLanguagePopulated(lang);
+          if (!populated) {
             const resp = await fetch(`dictionaries/${lang}.json`);
             if (resp.ok) {
               const data = await resp.json();
               await seedLanguage(lang, data);
             }
-          } catch (e) {
-            console.error(`Failed to seed ${lang}`, e);
           }
-        }
+        }));
+      } catch (e) {
+        console.warn("Background dictionary sync interrupted, falling back to rules.", e);
+      } finally {
+        setDbInitializing(false);
       }
-      setDbInitializing(false);
     };
     init();
   }, []);
@@ -72,13 +73,15 @@ const App: React.FC = () => {
 
   // Handlers
   const handleSynthesize = async () => {
-    if (!text || dbInitializing) return;
+    if (!text) return;
     setLoading(true);
     setError(null);
     setAudioUrl(null);
     setChannelData(null);
 
     try {
+      // Synthesis proceeds regardless of dbInitializing state
+      // convertToIPA handles the fallback internally
       const buffer = await renderAudio(text, config, language, isIpaMode);
       processAudioBuffer(buffer);
     } catch (err) {
@@ -143,8 +146,9 @@ const App: React.FC = () => {
                 text={text} setText={setText}
                 language={language} setLanguage={setLanguage}
                 isIpaMode={isIpaMode} setIsIpaMode={setIsIpaMode}
-                loading={loading || dbInitializing}
-                error={dbInitializing ? "Initializing Dictionaries..." : error}
+                loading={loading}
+                error={error}
+                dbInitializing={dbInitializing}
                 displayIpa={displayIpa}
                 selectedIpa={selectedIpa} setSelectedIpa={setSelectedIpa}
                 config={config}
