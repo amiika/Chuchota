@@ -1,10 +1,12 @@
-import React, { useState, useCallback } from 'react';
+
+import React, { useState, useCallback, useEffect } from 'react';
 import { renderAudio } from './services/klattEngine';
 import { convertToIPA, Language } from './services/textToIpa';
 import { VoiceConfig } from './types';
 import { PERSONAS } from './services/personas';
 import { bufferToWave } from './services/audioUtils';
 import { IPA_DATA } from './services/ipaData';
+import { isLanguagePopulated, seedLanguage } from './services/db';
 
 import { Header } from './components/Header';
 import { HelpModal } from './components/HelpModal';
@@ -19,6 +21,7 @@ const App: React.FC = () => {
   const [isIpaMode, setIsIpaMode] = useState(false);
   const [language, setLanguage] = useState<Language>('en');
   const [loading, setLoading] = useState(false);
+  const [dbInitializing, setDbInitializing] = useState(true);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [channelData, setChannelData] = useState<Float32Array | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -26,13 +29,50 @@ const App: React.FC = () => {
   const [config, setConfig] = useState<VoiceConfig>(JSON.parse(JSON.stringify(PERSONAS["Default"])));
   const [selectedIpa, setSelectedIpa] = useState<string>('a');
   const [personaCopied, setPersonaCopied] = useState(false);
+  const [displayIpa, setDisplayIpa] = useState('');
 
-  // Derived State
-  const displayIpa = isIpaMode ? text : convertToIPA(text, language);
+  // Initialize DB
+  useEffect(() => {
+    const init = async () => {
+      const langs: Language[] = ['en', 'fr', 'fi', 'ja'];
+      for (const lang of langs) {
+        const populated = await isLanguagePopulated(lang);
+        if (!populated) {
+          console.log("Loading dictionaries ...");
+          try {
+            const resp = await fetch(`./services/languages/${lang}Data.json`);
+            if (resp.ok) {
+              const data = await resp.json();
+              await seedLanguage(lang, data);
+            }
+          } catch (e) {
+            console.error(`Failed to seed ${lang}`, e);
+          }
+        }
+      }
+      setDbInitializing(false);
+    };
+    init();
+  }, []);
+
+  // Async IPA Preview
+  useEffect(() => {
+    let active = true;
+    const update = async () => {
+      if (isIpaMode) {
+        setDisplayIpa(text);
+      } else {
+        const ipa = await convertToIPA(text, language);
+        if (active) setDisplayIpa(ipa);
+      }
+    };
+    update();
+    return () => { active = false; };
+  }, [text, language, isIpaMode]);
 
   // Handlers
   const handleSynthesize = async () => {
-    if (!text) return;
+    if (!text || dbInitializing) return;
     setLoading(true);
     setError(null);
     setAudioUrl(null);
@@ -66,21 +106,13 @@ const App: React.FC = () => {
     setConfig(prev => {
         const currentOverrides = { ...(prev.phonemeOverrides || {}) };
         const charOverride = { ...(currentOverrides[char] || {}) };
-        
-        // Compare with default value from IPA_DATA
         const defaultValue = (IPA_DATA[char] as any)?.[key];
         
-        if (value === defaultValue) {
-            delete (charOverride as any)[key];
-        } else {
-            (charOverride as any)[key] = value;
-        }
+        if (value === defaultValue) delete (charOverride as any)[key];
+        else (charOverride as any)[key] = value;
 
-        if (Object.keys(charOverride).length === 0) {
-            delete currentOverrides[char];
-        } else {
-            currentOverrides[char] = charOverride;
-        }
+        if (Object.keys(charOverride).length === 0) delete currentOverrides[char];
+        else currentOverrides[char] = charOverride;
         
         return { ...prev, phonemeOverrides: currentOverrides };
     });
@@ -95,52 +127,26 @@ const App: React.FC = () => {
   };
 
   const handleCopyPersona = () => {
-    const c = config;
-    const f1 = (n: number) => (n || 0).toFixed(1);
-    
-    const line1 = `pitch: ${c.pitch}, speed: ${f1(c.speed)}, throat: ${f1(c.throat)}, mouth: ${f1(c.mouth)}, tongue: ${f1(c.tongue)},`;
-    const line2 = `breathiness: ${f1(c.breathiness)}, flutter: ${f1(c.flutter)}, vibratoDepth: ${c.vibratoDepth}, vibratoSpeed: ${f1(c.vibratoSpeed)}, tilt: ${c.tilt}, robotic: ${f1(c.robotic || 0)},`;
-    
-    let overridesStr = "phonemeOverrides: {";
-    const entries = Object.entries(c.phonemeOverrides || {});
-    if (entries.length === 0) {
-      overridesStr += "}";
-    } else {
-      overridesStr += "\n" + entries.map(([char, frame]) => {
-        const props = Object.entries(frame).map(([k, v]) => `${k}: ${v}`).join(', ');
-        return `'${char}': { ${props} }`;
-      }).join(',\n') + "\n}";
-    }
-
-    const formatted = `{\n${line1}\n${line2}\n${overridesStr}\n}`;
-    
-    navigator.clipboard.writeText(formatted);
+    navigator.clipboard.writeText(JSON.stringify(config, null, 2));
     setPersonaCopied(true);
     setTimeout(() => setPersonaCopied(false), 2000);
   };
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 p-4 md:p-8 lg:px-24 xl:px-48 flex flex-col pb-12">
-      
       <Header onOpenHelp={() => setShowHelp(true)} />
-
       {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
 
       <div className="w-full flex flex-col lg:flex-row gap-6">
-        
         <div className="flex-1 flex flex-col gap-6">
             <InputSection 
-                text={text}
-                setText={setText}
-                language={language}
-                setLanguage={setLanguage}
-                isIpaMode={isIpaMode}
-                setIsIpaMode={setIsIpaMode}
-                loading={loading}
-                error={error}
+                text={text} setText={setText}
+                language={language} setLanguage={setLanguage}
+                isIpaMode={isIpaMode} setIsIpaMode={setIsIpaMode}
+                loading={loading || dbInitializing}
+                error={dbInitializing ? "Initializing Dictionaries..." : error}
                 displayIpa={displayIpa}
-                selectedIpa={selectedIpa}
-                setSelectedIpa={setSelectedIpa}
+                selectedIpa={selectedIpa} setSelectedIpa={setSelectedIpa}
                 config={config}
                 onSynthesize={handleSynthesize}
             />
@@ -149,23 +155,17 @@ const App: React.FC = () => {
             
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
                 <IpaEditor 
-                    selectedChar={selectedIpa} 
-                    onSelectChar={setSelectedIpa} 
-                    config={config}
-                    onUpdateOverride={updatePhonemeOverride}
+                    selectedChar={selectedIpa} onSelectChar={setSelectedIpa} 
+                    config={config} onUpdateOverride={updatePhonemeOverride}
                 />
             </div>
         </div>
 
         <VoiceDesigner 
-            config={config}
-            updateConfig={updateConfig}
-            applyPreset={applyPreset}
-            resetConfig={resetConfig}
-            onCopyPersona={handleCopyPersona}
-            personaCopied={personaCopied}
+            config={config} updateConfig={updateConfig}
+            applyPreset={applyPreset} resetConfig={resetConfig}
+            onCopyPersona={handleCopyPersona} personaCopied={personaCopied}
         />
-
       </div>
     </div>
   );

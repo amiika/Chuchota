@@ -14,30 +14,18 @@ export const LANGUAGES: Record<Language, string> = {
 };
 
 function processNumbers(text: string, lang: Language): string {
-    const numFunc = {
-        'en': enNum,
-        'ja': jaNum,
-        'fi': fiNum,
-        'fr': frNum
-    }[lang];
-    
+    const numFunc = { 'en': enNum, 'ja': jaNum, 'fi': fiNum, 'fr': frNum }[lang];
     if (!numFunc) return text;
-
     return text.replace(/\d+/g, (m) => numFunc(parseInt(m)));
 }
 
-export function convertToIPA(text: string, lang: Language): string {
+export async function convertToIPA(text: string, lang: Language): Promise<string> {
   const expanded = processNumbers(text, lang);
-  
   switch (lang) {
-    case 'ja': return japaneseToIPA(expanded);
-    case 'fi': return finnishToIPA(expanded);
-    case 'fr': return frenchToIPA(expanded);
+    case 'ja': return await japaneseToIPA(expanded);
+    case 'fi': return await finnishToIPA(expanded);
+    case 'fr': return await frenchToIPA(expanded);
     case 'en': 
-    default: return englishToIPA(expanded);
+    default: return await englishToIPA(expanded);
   }
 }
-
-// Deprecated exports for backward compatibility if needed, though mostly unused now
-export { englishToIPA };
-export const RULES: any[] = [];
