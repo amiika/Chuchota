@@ -38,9 +38,9 @@ const App: React.FC = () => {
       for (const lang of langs) {
         const populated = await isLanguagePopulated(lang);
         if (!populated) {
-          console.log("Loading dictionaries ...");
+          console.log(`Loading dictionary for ${lang}...`);
           try {
-            const resp = await fetch(`./services/languages/${lang}Data.json`);
+            const resp = await fetch(`dictionaries/${lang}.json`);
             if (resp.ok) {
               const data = await resp.json();
               await seedLanguage(lang, data);
