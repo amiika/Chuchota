@@ -1,0 +1,5 @@
+{
+  "name": "Chuchota",
+  "description": "A text-to-speech converter powered by a local, offline implementation of the classic Klatt Formant Synthesizer. It converts natural language into acoustic formant parameters using a rule-based system.",
+  "requestFramePermissions": []
+}
