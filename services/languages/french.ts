@@ -38,33 +38,31 @@ const SILENT_FINALS = new Set(['s', 't', 'd', 'x', 'z', 'p', 'g', 'b']);
 async function predict(word: string, useDictionary: boolean = true): Promise<string> {
     const lower = word.toLowerCase();
     
-    // 1. Dictionary Lookup
+    // 1. Exact Lookup
     if (useDictionary) {
         const fromDB = await getIPAFromDB(lower, 'fr');
         if (fromDB) return fromDB.replace(/^\/|\/$/g, '');
     }
 
-    // 2. Morphological Pre-processing (Inflections)
-    let processed = lower;
-    let isPlural = false;
-    let isVerbPlural = false;
-
-    // Handle verbal plural -ent (silent in many verbs like "mangent")
-    if (processed.endsWith('ent') && processed.length > 4) {
-        // High probability of 3rd person plural verb
-        processed = processed.slice(0, -3);
-        isVerbPlural = true;
-    } 
-    // Handle standard plurals -s, -x
-    else if ((processed.endsWith('s') || processed.endsWith('x')) && processed.length > 3) {
-        processed = processed.slice(0, -1);
-        isPlural = true;
-    }
-
-    // Handle common infinitive -er -> /e/
-    if (processed.endsWith('er') && processed.length > 3) {
-        const stem = await applyRules(processed.slice(0, -2));
-        return stem + 'e';
+    // 2. Morphological Lookup (Smart Fallback for Silent Suffixes)
+    if (useDictionary) {
+        // Plural -s / -x (usually silent, so IPA is same as base)
+        if (lower.endsWith('s') || lower.endsWith('x')) {
+            const base = lower.slice(0, -1);
+            const baseIpa = await getIPAFromDB(base, 'fr');
+            if (baseIpa) return baseIpa.replace(/^\/|\/$/g, '');
+        }
+        
+        // 3rd person plural -ent (silent for verbs)
+        if (lower.endsWith('ent')) {
+            const base = lower.slice(0, -3); // e.g., mangent -> mang
+            // Try matching against 'mange' (3rd person singular / 1st person)
+            const baseE = base + 'e'; 
+            const baseIpa = await getIPAFromDB(baseE, 'fr');
+            if (baseIpa) return baseIpa.replace(/^\/|\/$/g, '');
+            
+            // Try base? (rare for -ent verbs to strip to something valid without 'e' unless it's -ir/-re)
+        }
     }
 
     return await applyRules(lower);

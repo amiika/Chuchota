@@ -109,19 +109,127 @@ async function wellKnown(word: string): Promise<string | undefined> {
     return COMMON_DICT[word.toLowerCase()];
 }
 
-async function tryMorphologicalAnalysis(word: string): Promise<string | undefined> {
+function getLastPhonemeType(ipa: string): 'voiced' | 'voiceless' | 'sibilant' | 'alveolar_stop' | 'other' {
+    const raw = ipa.replace(/ː/g, '').replace(/ˈ|ˌ/g, '');
+    if (raw.endsWith('s') || raw.endsWith('z') || raw.endsWith('ʃ') || raw.endsWith('ʒ') || raw.endsWith('tʃ') || raw.endsWith('dʒ')) return 'sibilant';
+    if (raw.endsWith('t') || raw.endsWith('d')) return 'alveolar_stop';
+    
+    // Explicit voiceless list (excluding sibilants/stops checked above)
+    // p, k, f, θ, h
+    const voiceless = ['p', 'k', 'f', 'θ', 'h'];
+    if (voiceless.some(c => raw.endsWith(c))) return 'voiceless';
+    
+    return 'voiced'; // Vowels and voiced consonants (b, g, v, ð, m, n, ŋ, l, ɹ, j, w)
+}
+
+async function tryMorphologicalAnalysis(word: string, useDictionary: boolean): Promise<string | undefined> {
     const lowerWord = word.toLowerCase();
     
-    // Simple morphology check using dictionary
-    if (lowerWord.endsWith('s') && lowerWord.length > 2) {
-      const singular = lowerWord.slice(0, -1);
-      const basePron = await wellKnown(singular);
-      if (basePron) {
-        const lastSound = basePron.slice(-1);
-        if (["s", "z", "ʃ", "ʒ", "tʃ", "dʒ"].includes(lastSound)) return basePron + 'ɪz';
-        if (["p", "t", "k", "f", "θ"].includes(lastSound)) return basePron + 's';
-        return basePron + 'z';
-      }
+    if (!useDictionary) return undefined;
+
+    // Helper to lookup with fallback to common dict
+    const lookup = async (w: string) => {
+        let res = await getIPAFromDB(w, 'en');
+        if (res) return res.replace(/^\/|\/$/g, '');
+        return COMMON_DICT[w];
+    };
+
+    // 1. Plurals & 3rd Person (-s, -es)
+    if (lowerWord.endsWith('s')) {
+        let base = lowerWord.slice(0, -1);
+        let baseIpa = await lookup(base);
+        let suffixIpa = 'z'; // Default to voiced (e.g., dogs, pens)
+
+        // Case: -es (boxes, watches)
+        if (!baseIpa && lowerWord.endsWith('es')) {
+             base = lowerWord.slice(0, -2);
+             baseIpa = await lookup(base);
+             
+             // Special case: y -> ies (cities -> city)
+             if (!baseIpa && lowerWord.endsWith('ies')) {
+                 base = lowerWord.slice(0, -3) + 'y';
+                 baseIpa = await lookup(base);
+             }
+
+             if (baseIpa) {
+                 const type = getLastPhonemeType(baseIpa);
+                 if (type === 'sibilant') suffixIpa = 'ɪz';
+                 else if (type === 'voiceless') suffixIpa = 's'; // potates? rare.
+             }
+        } 
+        // Case: simple -s
+        else if (baseIpa) {
+             const type = getLastPhonemeType(baseIpa);
+             if (type === 'voiceless') suffixIpa = 's'; // cats, tops
+             else if (type === 'sibilant') suffixIpa = 'ɪz'; // bridges
+        }
+
+        if (baseIpa) return baseIpa + suffixIpa;
+    }
+
+    // 2. Past Tense (-ed)
+    if (lowerWord.endsWith('ed')) {
+        let base = lowerWord.slice(0, -2); // played -> play
+        let baseIpa = await lookup(base);
+        
+        // Handle 'loved' -> 'love' (e drop)
+        if (!baseIpa) {
+            base = lowerWord.slice(0, -1); // loved -> love
+            baseIpa = await lookup(base);
+            
+            // Handle 'stopped' -> 'stop' (consonant doubling)
+            if (!baseIpa && lowerWord.length > 3) {
+                // Check if char before 'ed' is same as char before that (e.g. pp in stopped)
+                const c1 = lowerWord[lowerWord.length - 3];
+                const c2 = lowerWord[lowerWord.length - 4];
+                if (c1 === c2 && CONSONANTS.has(c1)) {
+                    base = lowerWord.slice(0, -3); // stopped -> stop
+                    baseIpa = await lookup(base);
+                }
+            }
+            // Handle 'tried' -> 'try'
+            if (!baseIpa && lowerWord.endsWith('ied')) {
+                 base = lowerWord.slice(0, -3) + 'y';
+                 baseIpa = await lookup(base);
+            }
+        }
+
+        if (baseIpa) {
+            const type = getLastPhonemeType(baseIpa);
+            if (type === 'alveolar_stop') return baseIpa + 'ɪd'; // wanted, ended
+            if (type === 'voiceless') return baseIpa + 't'; // kissed
+            return baseIpa + 'd'; // played, cleaned
+        }
+    }
+
+    // 3. Progressive (-ing)
+    if (lowerWord.endsWith('ing')) {
+         let base = lowerWord.slice(0, -3); // playing -> play
+         let baseIpa = await lookup(base);
+         
+         // Handle 'making' -> 'make'
+         if (!baseIpa) {
+             base = base + 'e';
+             baseIpa = await lookup(base);
+             
+             // Handle 'running' -> 'run'
+             if (!baseIpa && base.length > 2) {
+                 const doubleCon = lowerWord[lowerWord.length - 4];
+                 if (doubleCon === lowerWord[lowerWord.length - 5]) {
+                     base = lowerWord.slice(0, -4);
+                     baseIpa = await lookup(base);
+                 }
+             }
+         }
+         
+         if (baseIpa) return baseIpa + 'ɪŋ';
+    }
+
+    // 4. Adverbs (-ly)
+    if (lowerWord.endsWith('ly')) {
+        let base = lowerWord.slice(0, -2); // quickly -> quick
+        let baseIpa = await lookup(base);
+        if (baseIpa) return baseIpa + 'li';
     }
     
     return undefined;
@@ -239,9 +347,11 @@ async function predict(word: string, useDictionary: boolean = true): Promise<str
     if (useDictionary) {
         const known = await wellKnown(word);
         if (known) return known;
+        
+        const morph = await tryMorphologicalAnalysis(word, useDictionary);
+        if (morph) return morph;
     }
-    const morph = await tryMorphologicalAnalysis(word);
-    if (morph) return morph;
+    
     const syllables = syllabify(word);
     const stressIdx = assignStress(syllables, word);
     const parts = syllables.map((s, i) => syllableToIPA(s, i, i === stressIdx, i === syllables.length - 1));
