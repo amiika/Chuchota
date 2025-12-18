@@ -1,4 +1,5 @@
-import { getIPAFromDB, findLongestPrefixMatch } from '../db';
+
+import { getIPAFromDB } from '../db';
 
 // Finnish Number Logic
 const FI_NUMS = ["nolla", "yksi", "kaksi", "kolme", "neljä", "viisi", "kuusi", "seitsemän", "kahdeksan", "yhdeksän", "kymmenen"];
@@ -22,36 +23,23 @@ const CHAR_MAP: Record<string, string> = {
     'z': 'ts', 'å': 'o', 'ä': 'æ', 'ö': 'ø', 'y': 'y',
 };
 
-async function getFinnishIPA(token: string, useDictionary: boolean): Promise<string> {
-    if (useDictionary) {
-        // 1. Exact match or Forward Prefix Match
-        const direct = await getIPAFromDB(token, 'fi', true);
-        if (direct) return direct.replace(/^\/|\/$/g, '');
-
-        // 2. Longest Prefix (Root) Match - Great for Finnish cases
-        const rootMatch = await findLongestPrefixMatch(token, 'fi');
-        if (rootMatch && rootMatch.word.length > 2) {
-            return rootMatch.ipa.replace(/^\/|\/$/g, '');
-        }
-    }
-
-    // Fallback to rules
-    let output = ""; let i = 0;
-    while (i < token.length) {
-       const char = token[i];
-       if (char === 'n' && token[i+1] === 'g') { output += "ŋː"; i += 2; continue; }
-       if (char === 'n' && token[i+1] === 'k') { output += "ŋ"; i++; continue; }
-       output += CHAR_MAP[char] || char; i++;
-    }
-    return output;
-}
-
 export async function finnishToIPA(text: string, useDictionary: boolean = true): Promise<string> {
     let input = text.toLowerCase();
     const tokens = input.match(/[\wåäö]+|[.,!?;]|\s+/g) || [];
     const results = await Promise.all(tokens.map(async (token) => {
          if (!token.trim() || /^[.,!?;]$/.test(token)) return token;
-         return await getFinnishIPA(token, useDictionary);
+         if (useDictionary) {
+             const fromDB = await getIPAFromDB(token, 'fi');
+             if (fromDB) return fromDB.replace(/^\/|\/$/g, '');
+         }
+         let output = ""; let i = 0;
+         while (i < token.length) {
+            const char = token[i];
+            if (char === 'n' && token[i+1] === 'g') { output += "ŋː"; i += 2; continue; }
+            if (char === 'n' && token[i+1] === 'k') { output += "ŋ"; i++; continue; }
+            output += CHAR_MAP[char] || char; i++;
+         }
+         return output;
     }));
     return results.join('');
 }

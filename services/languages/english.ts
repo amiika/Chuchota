@@ -1,7 +1,7 @@
 
-import { getIPAFromDB, findLongestPrefixMatch } from '../db';
+import { getIPAFromDB } from '../db';
 
-// A rule-based English G2P (Grapheme-to-Phoneme) engine with inflection-aware dictionary lookup.
+// A rule-based English G2P (Grapheme-to-Phoneme) engine.
 
 // --- 1. Number & Text Expansion ---
 
@@ -26,6 +26,7 @@ export function numberToWords(n: number): string {
 }
 
 export function expandAbbreviations(text: string): string {
+    // Abbreviations
     const abbr: Record<string, string> = { "mr.": "mister", "mrs.": "missus", "dr.": "doctor", "st.": "street", "co.": "company" };
     text = text.replace(/\b([a-z]+\.)/gi, (m) => abbr[m.toLowerCase()] || m);
     return text.replace(/\s+/g, " ").trim();
@@ -36,6 +37,26 @@ export function expandAbbreviations(text: string): string {
 const VOWELS = new Set(["a", "e", "i", "o", "u", "y"]);
 const CONSONANTS = new Set("bcdfghjklmnpqrstvwxyz".split(""));
 const VALID_ONSETS = new Set(['b', 'bl', 'br', 'c', 'ch', 'cl', 'cr', 'd', 'dr', 'dw', 'f', 'fl', 'fr', 'g', 'gl', 'gr', 'gu', 'h', 'j', 'k', 'kl', 'kn', 'kr', 'l', 'm', 'n', 'p', 'ph', 'pl', 'pr', 'ps', 'qu', 'r', 'rh', 's', 'sc', 'sch', 'scr', 'sh', 'sk', 'sl', 'sm', 'sn', 'sp', 'sph', 'spl', 'spr', 'st', 'str', 'sv', 'sw', 't', 'th', 'thr', 'tr', 'ts', 'tw', 'v', 'w', 'wh', 'wr', 'x', 'y', 'z']);
+
+// Small dictionary for high-frequency irregular words as fallback
+const COMMON_DICT: Record<string, string> = {
+    "the": "ðə", "of": "ʌv", "and": "ænd", "to": "tu", "a": "ə", "in": "ɪn", "is": "ɪz", "you": "ju",
+    "that": "ðæt", "it": "ɪt", "he": "hi", "was": "wʌz", "for": "fɔɹ", "on": "ɑn", "are": "ɑɹ",
+    "as": "æz", "with": "wɪð", "his": "hɪz", "they": "ðeɪ", "i": "aɪ", "at": "æt", "be": "bi",
+    "this": "ðɪs", "have": "hæv", "from": "fɹʌm", "or": "ɔɹ", "one": "wʌn", "had": "hæd",
+    "by": "baɪ", "word": "wɝd", "but": "bʌt", "not": "nɑt", "what": "wʌt", "all": "ɔl",
+    "were": "wɝ", "we": "wi", "when": "wɛn", "your": "jɔɹ", "can": "kæn", "said": "sɛd",
+    "there": "ðɛɹ", "use": "juz", "an": "æn", "each": "itʃ", "which": "wɪtʃ", "she": "ʃi",
+    "do": "du", "how": "haʊ", "their": "ðɛɹ", "if": "ɪf", "will": "wɪl", "up": "ʌp",
+    "other": "ʌðɚ", "about": "əbaʊt", "out": "aʊt", "many": "mɛni", "then": "ðɛn", "them": "ðɛm",
+    "these": "ðiz", "so": "soʊ", "some": "sʌm", "her": "hɝ", "would": "wʊd", "make": "meɪk",
+    "like": "laɪk", "him": "hɪm", "into": "ɪntu", "time": "taɪm", "has": "hæz", "look": "lʊk",
+    "two": "tu", "more": "mɔɹ", "write": "ɹaɪt", "go": "ɡoʊ", "see": "si", "number": "nʌmbɚ",
+    "no": "noʊ", "way": "weɪ", "could": "kʊd", "people": "pipəl", "my": "maɪ", "than": "ðæn",
+    "first": "fɝst", "water": "wɑtɚ", "been": "bɪn", "call": "kɔl", "who": "hu", "oil": "ɔɪl",
+    "its": "ɪts", "now": "naʊ", "find": "faɪnd", "long": "lɔŋ", "down": "daʊn", "day": "deɪ",
+    "did": "dɪd", "get": "ɡɛt", "come": "kʌm", "made": "meɪd", "may": "meɪ", "part": "pɑɹt"
+};
 
 const SUFFIX_RULES: Array<[RegExp, string, boolean]> = [
   [/^tion$/, 'ʃən', false], [/^sion$/, 'ʒən', false], [/^cial$/, 'ʃəl', false], [/^tial$/, 'ʃəl', false],
@@ -78,60 +99,28 @@ const PHONEME_RULES: Array<[RegExp, string]> = [
 
 // --- 3. Helpers & Morphology ---
 
-/**
- * Searches the loaded dictionary for the word or its inflectional root.
- */
 async function wellKnown(word: string): Promise<string | undefined> {
-    const lower = word.toLowerCase();
-    
-    // 1. Exact Match (with Native Prefix Fallback)
-    // By passing 'true', we allow the DB to return an entry if our word is a prefix of it.
-    const direct = await getIPAFromDB(lower, 'en', true);
-    if (direct) return direct.replace(/^\/|\/$/g, '');
-
-    // 2. Backward Prefix Match (Finding Root)
-    // If "running" isn't found, this will find "run" natively using a cursor.
-    const rootMatch = await findLongestPrefixMatch(lower, 'en');
-    if (rootMatch && rootMatch.word.length > 2) {
-        let pron = rootMatch.ipa.replace(/^\/|\/$/g, '');
-        const suffix = lower.slice(rootMatch.word.length);
-        
-        // Simple phonological glue logic
-        if (suffix === 's' || suffix === 'es') {
-            const last = pron.slice(-1);
-            if (["s", "z", "ʃ", "ʒ", "tʃ", "dʒ"].includes(last)) pron += 'ɪz';
-            else if (["p", "t", "k", "f", "θ"].includes(last)) pron += 's';
-            else pron += 'z';
-            return pron;
-        } else if (suffix === 'ed') {
-            const last = pron.slice(-1);
-            if (last === 't' || last === 'd') pron += 'ɪd';
-            else if (["p", "k", "f", "s", "ʃ", "tʃ"].includes(last)) pron += 't';
-            else pron += 'd';
-            return pron;
-        } else if (suffix === 'ing') {
-            return pron + 'ɪŋ';
-        }
-        // If we found a prefix match but can't glue it perfectly, 
-        // return the prefix pron as a better guess than rule-based G2P.
-        if (suffix.length === 0) return pron;
-    }
-
-    // 3. Manual Inflectional Guessing (Legacy fallback for complex cases)
-    const stems = [];
-    if (lower.endsWith('s')) stems.push(lower.slice(0, -1));
-    if (lower.endsWith('es')) stems.push(lower.slice(0, -2));
-    if (lower.endsWith('ed')) {
-        stems.push(lower.slice(0, -2)); 
-        stems.push(lower.slice(0, -1)); 
-    }
-    // ... etc (rest of previous manual logic as fallback)
-
-    return undefined;
+    const fromDB = await getIPAFromDB(word, 'en');
+    if (fromDB) return fromDB.replace(/^\/|\/$/g, '');
+    return COMMON_DICT[word.toLowerCase()];
 }
 
 async function tryMorphologicalAnalysis(word: string): Promise<string | undefined> {
-    // This is used for rule-based fallback if dictionary lookup fails
+    const lowerWord = word.toLowerCase();
+    
+    // Simple morphology check using dictionary
+    if (lowerWord.endsWith('s') && lowerWord.length > 2) {
+      const singular = lowerWord.slice(0, -1);
+      const basePron = await wellKnown(singular);
+      if (basePron) {
+        const lastSound = basePron.slice(-1);
+        if (["s", "z", "ʃ", "ʒ", "tʃ", "dʒ"].includes(lastSound)) return basePron + 'ɪz';
+        if (["p", "t", "k", "f", "θ"].includes(lastSound)) return basePron + 's';
+        return basePron + 'z';
+      }
+    }
+    
+    // ... more patterns ...
     return undefined;
 }
 

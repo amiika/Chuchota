@@ -1,4 +1,5 @@
-import { getIPAFromDB, findLongestPrefixMatch } from '../db';
+
+import { getIPAFromDB } from '../db';
 
 // French Number logic
 const FR_ONES = ["zéro", "un", "deux", "trois", "quatre", "cinq", "six", "sept", "huit", "neuf", "dix", "onze", "douze", "treize", "quatorze", "quinze", "seize"];
@@ -32,30 +33,35 @@ const RULES: Array<[RegExp, string]> = [
     [/^w/, 'w'], [/^x/, 'ks'], [/^z/, 'z'],
 ];
 
+const SILENT_FINALS = new Set(['s', 't', 'd', 'x', 'z', 'p', 'g', 'b']);
+
 async function predict(word: string, useDictionary: boolean = true): Promise<string> {
     const lower = word.toLowerCase();
     
+    // 1. Dictionary Lookup
     if (useDictionary) {
-        // 1. Exact Match or Forward Prefix Match
-        const direct = await getIPAFromDB(lower, 'fr', true);
-        if (direct) return direct.replace(/^\/|\/$/g, '');
-
-        // 2. Longest Prefix (Root) Match
-        const rootMatch = await findLongestPrefixMatch(lower, 'fr');
-        if (rootMatch && rootMatch.word.length > 2) {
-            return rootMatch.ipa.replace(/^\/|\/$/g, '');
-        }
+        const fromDB = await getIPAFromDB(lower, 'fr');
+        if (fromDB) return fromDB.replace(/^\/|\/$/g, '');
     }
 
-    // 3. Fallback to Rule-based processing
+    // 2. Morphological Pre-processing (Inflections)
     let processed = lower;
+    let isPlural = false;
+    let isVerbPlural = false;
+
+    // Handle verbal plural -ent (silent in many verbs like "mangent")
     if (processed.endsWith('ent') && processed.length > 4) {
+        // High probability of 3rd person plural verb
         processed = processed.slice(0, -3);
+        isVerbPlural = true;
     } 
+    // Handle standard plurals -s, -x
     else if ((processed.endsWith('s') || processed.endsWith('x')) && processed.length > 3) {
         processed = processed.slice(0, -1);
+        isPlural = true;
     }
 
+    // Handle common infinitive -er -> /e/
     if (processed.endsWith('er') && processed.length > 3) {
         const stem = await applyRules(processed.slice(0, -2));
         return stem + 'e';
@@ -73,6 +79,7 @@ async function applyRules(text: string): Promise<string> {
         const remaining = text.substring(i);
         let matched = false;
 
+        // Special case: intervocalic 's' -> /z/
         if (text[i] === 's' && i > 0 && i < len - 1) {
             const vowels = /[aeiouyàâäéèêëîïôöùûüç]/;
             if (vowels.test(text[i - 1]) && vowels.test(text[i + 1])) {
@@ -82,6 +89,7 @@ async function applyRules(text: string): Promise<string> {
             }
         }
 
+        // Apply mapping rules
         for (const [pattern, replacement] of RULES) {
             const match = remaining.match(pattern);
             if (match) {
@@ -100,7 +108,8 @@ async function applyRules(text: string): Promise<string> {
 
             if (isLast) {
                 if (!['c', 'r', 'f', 'l', 'q'].includes(char)) {
-                    if (/[aeiouyàâäéèêëîïôöùûü]/.test(char)) {
+                    if (!/[aeiouyàâäéèêëîïôöùûü]/.test(char)) {
+                    } else {
                         ipa += char;
                     }
                 } else {
