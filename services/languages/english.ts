@@ -100,8 +100,12 @@ const PHONEME_RULES: Array<[RegExp, string]> = [
 // --- 3. Helpers & Morphology ---
 
 async function wellKnown(word: string): Promise<string | undefined> {
-    const fromDB = await getIPAFromDB(word, 'en');
-    if (fromDB) return fromDB.replace(/^\/|\/$/g, '');
+    try {
+        const fromDB = await getIPAFromDB(word, 'en');
+        if (fromDB) return fromDB.replace(/^\/|\/$/g, '');
+    } catch (e) {
+        // Fallback to rules if DB is busy or errors
+    }
     return COMMON_DICT[word.toLowerCase()];
 }
 
@@ -120,7 +124,6 @@ async function tryMorphologicalAnalysis(word: string): Promise<string | undefine
       }
     }
     
-    // ... more patterns ...
     return undefined;
 }
 
