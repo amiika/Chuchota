@@ -104,7 +104,7 @@ class KlattProcessor extends AudioWorkletProcessor {
     }
     process(inputs, outputs) {
         const out = outputs[0][0]; const framesLen = this.frames.length;
-        if (!framesLen) return true;
+        if (!framesLen || !out) return true;
         const {vibratoSpeed = 6, vibratoDepth = 0, tilt = 0, pitch: pitchBase, speed, mouth: openQ, robotic, breathiness: breath, flutter} = this.params;
         for (let i = 0; i < out.length; i++) {
             if (this.frameIndex >= framesLen) { out[i] = 0; continue; }
@@ -112,10 +112,15 @@ class KlattProcessor extends AudioWorkletProcessor {
             const dur = Math.max(1, (cur.baseDuration || 60) / speed * (this.sampleRate / 1000.0));
             const t = Math.min(1, Math.max(0, this.sampleCount / dur));
             const L = (a, b) => (a || 0) + ((b || 0) - (a || 0)) * t;
-            let f0 = pitchBase;
+            
+            let f0 = L(cur._f0 || pitchBase, next._f0 || pitchBase);
             if (vibratoDepth > 0) f0 = f0 * (1 + Math.sin(this.globalTime / this.sampleRate * 2 * Math.PI * vibratoSpeed) * 0.05 * vibratoDepth);
-            let AV = L(cur.voiceAmplitude, next.voiceAmplitude); let AH = L(cur.aspirationAmplitude, next.aspirationAmplitude);
+            
+            let AV = L(cur.voiceAmplitude, next.voiceAmplitude); 
+            if (cur._stressScale) AV *= cur._stressScale;
+            let AH = L(cur.aspirationAmplitude, next.aspirationAmplitude);
             if (AV > 0) AH = Math.max(AH, breath * 0.5 * AV);
+
             const source = this.glottal.process(f0, AV, AH, openQ, flutter, tilt, this.globalTime, robotic);
             let casc = source;
             this.rNP.set(L(cur.cfNP, next.cfNP), L(cur.cbNP, next.cbNP));
@@ -127,6 +132,7 @@ class KlattProcessor extends AudioWorkletProcessor {
             this.r3.set(L(cur.cf3, next.cf3), L(cur.cb3, next.cb3)); casc = this.r3.process(casc);
             this.r2.set(L(cur.cf2, next.cf2), L(cur.cb2, next.cb2)); casc = this.r2.process(casc);
             this.r1.set(L(cur.cf1, next.cf1), L(cur.cb1, next.cb1)); casc = this.r1.process(casc);
+
             let noise = this.fricationGen.next() * L(cur.fricationAmplitude, next.fricationAmplitude);
             let par = noise * L(cur.parallelBypass, next.parallelBypass);
             this.p1.set(L(cur.pf1, next.pf1), L(cur.pb1, next.pb1)); par += (this.p1.process(noise) - noise) * L(cur.pa1, next.pa1);
@@ -135,6 +141,7 @@ class KlattProcessor extends AudioWorkletProcessor {
             this.p4.set(L(cur.pf4, next.pf4), L(cur.pb4, next.pb4)); par += (this.p4.process(noise) - noise) * L(cur.pa4, next.pa4);
             this.p5.set(L(cur.pf5, next.pf5), L(cur.pb5, next.pb5)); par += (this.p5.process(noise) - noise) * L(cur.pa5, next.pa5);
             this.p6.set(L(cur.pf6, next.pf6), L(cur.pb6, next.pb6)); par += (this.p6.process(noise) - noise) * L(cur.pa6, next.pa6);
+
             let val = Math.tanh((casc + par) * 0.4);
             if (this.frameIndex === framesLen - 1 && dur - this.sampleCount < 2000) val *= (dur - this.sampleCount) / 2000;
             out[i] = val; this.sampleCount++; this.globalTime++;
@@ -155,41 +162,131 @@ const getWorkletUrl = () => {
   return workletUrl;
 };
 
-export async function renderAudio(input: string, config: VoiceConfig, language: Language = 'en', isIpa: boolean = false): Promise<AudioBuffer> {
-    const ipaText = isIpa ? input : await convertToIPA(input, language);
+export async function renderAudio(input: string, config: VoiceConfig, language: Language = 'en', isIpa: boolean = false, useDictionary: boolean = true): Promise<AudioBuffer> {
+    const ipaText = isIpa ? input : await convertToIPA(input, language, useDictionary);
     let sequence: KlattFrame[] = [{ ...IPA_DATA[' '], baseDuration: 100 }];
     const chars = Array.from(ipaText);
+    
+    let stressPending = 1.0;
+
     for (const char of chars) {
         if (char === ' ') { sequence.push({ ...IPA_DATA[' '], baseDuration: 100 }); continue; }
         if (char === 'ː') { const prev = sequence[sequence.length - 1]; if (prev) prev.baseDuration = (prev.baseDuration || 60) * 1.5; continue; }
-        if (char === 'ˈ' || char === 'ˌ') continue; 
+        if (char === 'ˈ') { stressPending = 1.3; continue; }
+        if (char === 'ˌ') { stressPending = 1.15; continue; }
+        
         const lookup = IPA_DATA[char] ? char : (IPA_DATA[char.toLowerCase()] ? char.toLowerCase() : null);
         if (!lookup) continue;
+        
         const frame = JSON.parse(JSON.stringify({ ...IPA_DATA[lookup], ...(config.phonemeOverrides?.[lookup] || {}) }));
+        
+        // Tag frames with punctuation types to help declination reset
+        if (char === '.' || char === '!' || char === '?') {
+            (frame as any)._isSentenceEnd = true;
+            (frame as any)._isQuestion = (char === '?');
+        } else if (char === ',') {
+            (frame as any)._isPhraseEnd = true;
+        }
+
+        frame._stressScale = stressPending;
+        if (stressPending > 1.0) frame.baseDuration *= stressPending;
+        stressPending = 1.0;
+
         if (frame.isStop) {
              sequence.push({ ...IPA_DATA[' '], _preStopGap: true, baseDuration: 40 });
              sequence.push({ ...IPA_DATA[' '], baseDuration: 10 });
         }
         sequence.push(frame);
     }
+    
+    // Multi-sentence prosody processing
+    let currentSentenceStart = 0;
+    let sentenceVariation = 0;
+
     for (let i = 0; i < sequence.length; i++) {
         const cur = sequence[i];
+        const next = sequence[i+1];
+        
+        // Find current sentence end
+        let currentSentenceEnd = sequence.length - 1;
+        for (let j = i; j < sequence.length; j++) {
+            if ((sequence[j] as any)._isSentenceEnd) {
+                currentSentenceEnd = j;
+                break;
+            }
+        }
+
+        const sentenceLength = currentSentenceEnd - currentSentenceStart + 1;
+        const progressInSentence = (i - currentSentenceStart) / (sentenceLength || 1);
+
+        // Declination: Drops within each sentence
+        const declinationFactor = 1.0 - (progressInSentence * (config.declination || 0)); 
+        
+        // Fluctuation: Add a slight random (but consistent per phrase) offset to pitch
+        // This makes the voice sound less like a looping sample
+        if (i === currentSentenceStart) {
+            sentenceVariation = (Math.random() * 0.04 - 0.02); // +/- 2% pitch variation per sentence
+        }
+
+        let pitchModifier = declinationFactor + sentenceVariation;
+        
+        // Handle sentence final contours (Question rise or period drop)
+        if ((cur as any)._isQuestion) {
+             pitchModifier *= 1.15;
+        } else if ((cur as any)._isSentenceEnd) {
+             pitchModifier *= 0.95;
+        }
+
+        (cur as any)._f0 = config.pitch * pitchModifier;
+
+        if (cur._stressScale && cur._stressScale > 1.0) {
+            (cur as any)._f0 *= 1.1; // Pitch bump for stressed syllables
+        }
+
+        // Duration Rules
+        if (cur.isVowel && next && next.isVoiced && !next._silence) {
+            cur.baseDuration *= 1.35; // Lengthen vowels before voiced consonants
+        }
+        if (!cur.isVowel && !cur._silence && next && !next.isVowel && !next._silence) {
+            cur.baseDuration *= 0.8; // Shorten phonemes in clusters
+        }
+
+        // Coarticulation
         if (cur.copyAdjacent) {
             const neighbor = sequence[i+1] || sequence[i-1];
-            if (neighbor && !neighbor._silence) ['cf1','cf2','cf3','cf4','cf5','cf6'].forEach(k => (cur as any)[k] = (neighbor as any)[k]);
+            if (neighbor && !neighbor._silence) {
+                ['cf1','cf2','cf3','cf4','cf5','cf6'].forEach(k => (cur as any)[k] = (neighbor as any)[k]);
+            }
         }
         if (!cur.baseDuration) cur.baseDuration = cur._silence ? 150 : 60;
-        ['cf1','cf2','cf3','cf4','cf5','cf6','pf1','pf2','pf3','pf4','pf5','pf6'].forEach(k => { if((cur as any)[k]) (cur as any)[k] *= config.throat; });
-        ['cb1','cb2','cb3','cb4','cb5','cb6','pb1','pb2','pb3','pb4','pb5','pb6'].forEach(k => { if((cur as any)[k]) (cur as any)[k] *= config.throat; });
-        if (cur.cf2) cur.cf2 *= config.tongue;
+        
+        // Timbre Scaling (Throat/Tongue)
+        ['cf1','cf2','cf3','cf4','cf5','cf6','pf1','pf2','pf3','pf4','pf5','pf6'].forEach(k => { 
+            if((cur as any)[k]) (cur as any)[k] *= (config.throat || 1.0); 
+        });
+        ['cb1','cb2','cb3','cb4','cb5','cb6','pb1','pb2','pb3','pb4','pb5','pb6'].forEach(k => { 
+            if((cur as any)[k]) (cur as any)[k] *= (config.throat || 1.0); 
+        });
+        if (cur.cf2) cur.cf2 *= (config.tongue || 1.0);
+
+        // Reset sentence marker
+        if ((cur as any)._isSentenceEnd) {
+            currentSentenceStart = i + 1;
+        }
     }
+    
     const finalSilence = JSON.parse(JSON.stringify(IPA_DATA[' ']));
     finalSilence.baseDuration = 400; 
     sequence.push(finalSilence);
+    
     const sampleRate = 44100;
-    const totalSeconds = (sequence.reduce((a, b) => a + (b.baseDuration || 60), 0) / config.speed) / 1000 + 0.2;
-    const ctx = new OfflineAudioContext(1, Math.ceil(totalSeconds * sampleRate), sampleRate);
+    const totalDurationMs = sequence.reduce((a, b) => a + (b.baseDuration || 60), 0) / (config.speed || 1.0);
+    const totalSamples = Math.ceil((totalDurationMs / 1000 + 0.5) * sampleRate);
+    
+    const ctx = new OfflineAudioContext(1, totalSamples, sampleRate);
     await ctx.audioWorklet.addModule(getWorkletUrl());
-    new AudioWorkletNode(ctx, 'klatt-full', { processorOptions: { frames: sequence, params: config } }).connect(ctx.destination);
+    const node = new AudioWorkletNode(ctx, 'klatt-full', { processorOptions: { frames: sequence, params: config } });
+    node.connect(ctx.destination);
+    
     return await ctx.startRendering();
 }

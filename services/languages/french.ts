@@ -1,5 +1,4 @@
-
-import { getIPAFromDB } from '../db';
+import { getIPAFromDB, findLongestPrefixMatch } from '../db';
 
 // French Number logic
 const FR_ONES = ["zéro", "un", "deux", "trois", "quatre", "cinq", "six", "sept", "huit", "neuf", "dix", "onze", "douze", "treize", "quatorze", "quinze", "seize"];
@@ -33,28 +32,109 @@ const RULES: Array<[RegExp, string]> = [
     [/^w/, 'w'], [/^x/, 'ks'], [/^z/, 'z'],
 ];
 
-async function predict(word: string): Promise<string> {
+async function predict(word: string, useDictionary: boolean = true): Promise<string> {
     const lower = word.toLowerCase();
-    const fromDB = await getIPAFromDB(lower, 'fr');
-    if (fromDB) return fromDB.replace(/^\/|\/$/g, '');
-    let ipa = ""; let i = 0;
-    while(i < lower.length) {
-        const remaining = lower.substring(i); let matched = false;
-        if (lower[i] === 's' && i > 0 && i < lower.length - 1) { if (/[aeiouy]/.test(lower[i-1]) && /[aeiouy]/.test(lower[i+1])) { ipa += 'z'; i++; continue; } }
-        for (const [pattern, replacement] of RULES) {
-            const match = remaining.match(pattern);
-            if (match) { ipa += replacement; i += match[0].length; matched = true; break; }
+    
+    if (useDictionary) {
+        // 1. Exact Match or Forward Prefix Match
+        const direct = await getIPAFromDB(lower, 'fr', true);
+        if (direct) return direct.replace(/^\/|\/$/g, '');
+
+        // 2. Longest Prefix (Root) Match
+        const rootMatch = await findLongestPrefixMatch(lower, 'fr');
+        if (rootMatch && rootMatch.word.length > 2) {
+            return rootMatch.ipa.replace(/^\/|\/$/g, '');
         }
-        if (!matched) { if (i === lower.length - 1) { if (!['e', 's', 't', 'd', 'x', 'z', 'p', 'g'].includes(lower[i])) { if (!/[aeiouy]/.test(lower[i])) ipa += lower[i]; } } else { ipa += lower[i]; } i++; }
     }
-    return ipa.endsWith('ə') ? ipa.slice(0, -1) : ipa;
+
+    // 3. Fallback to Rule-based processing
+    let processed = lower;
+    if (processed.endsWith('ent') && processed.length > 4) {
+        processed = processed.slice(0, -3);
+    } 
+    else if ((processed.endsWith('s') || processed.endsWith('x')) && processed.length > 3) {
+        processed = processed.slice(0, -1);
+    }
+
+    if (processed.endsWith('er') && processed.length > 3) {
+        const stem = await applyRules(processed.slice(0, -2));
+        return stem + 'e';
+    }
+
+    return await applyRules(lower);
 }
 
-export async function frenchToIPA(text: string): Promise<string> {
+async function applyRules(text: string): Promise<string> {
+    let ipa = "";
+    let i = 0;
+    const len = text.length;
+
+    while (i < len) {
+        const remaining = text.substring(i);
+        let matched = false;
+
+        if (text[i] === 's' && i > 0 && i < len - 1) {
+            const vowels = /[aeiouyàâäéèêëîïôöùûüç]/;
+            if (vowels.test(text[i - 1]) && vowels.test(text[i + 1])) {
+                ipa += 'z';
+                i++;
+                continue;
+            }
+        }
+
+        for (const [pattern, replacement] of RULES) {
+            const match = remaining.match(pattern);
+            if (match) {
+                ipa += replacement;
+                i += match[0].length;
+                matched = true;
+                break;
+            }
+        }
+
+        if (!matched) {
+            const char = text[i];
+            const isLast = i === len - 1;
+            const isSecondToLast = i === len - 2;
+            const nextChar = text[i+1];
+
+            if (isLast) {
+                if (!['c', 'r', 'f', 'l', 'q'].includes(char)) {
+                    if (/[aeiouyàâäéèêëîïôöùûü]/.test(char)) {
+                        ipa += char;
+                    }
+                } else {
+                    if (char === 'r' && text.endsWith('er') && text.length > 3) {
+                    } else {
+                        ipa += (char === 'r' ? 'ʁ' : char);
+                    }
+                }
+            } 
+            else if (isSecondToLast && nextChar === 'e') {
+                 if (/[b-df-hj-np-tv-z]/.test(char)) {
+                     const mapping: Record<string, string> = {'r': 'ʁ', 'j': 'ʒ', 's': 's', 'c': 'k', 'g': 'g'};
+                     ipa += mapping[char] || char;
+                 } else {
+                     ipa += char;
+                 }
+                 i += 2; 
+                 continue;
+            }
+            else {
+                ipa += char;
+            }
+            i++;
+        }
+    }
+    if (ipa.endsWith('ə')) ipa = ipa.slice(0, -1);
+    return ipa.replace(/r/g, 'ʁ');
+}
+
+export async function frenchToIPA(text: string, useDictionary: boolean = true): Promise<string> {
     const tokens = text.toLowerCase().match(/[\w'àâäéèêëîïôöùûüç-]+|[.,!?;]|\s+/g) || [];
     const results = await Promise.all(tokens.map(async (token) => {
         if (!token.trim() || /^[.,!?;]$/.test(token)) return token;
-        return await predict(token);
+        return await predict(token, useDictionary);
     }));
     return results.join('');
 }

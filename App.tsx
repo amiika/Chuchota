@@ -19,6 +19,7 @@ const App: React.FC = () => {
   // State
   const [text, setText] = useState('ALL YOUR BASE ARE BELONG TO US');
   const [isIpaMode, setIsIpaMode] = useState(false);
+  const [useDictionary, setUseDictionary] = useState(true);
   const [language, setLanguage] = useState<Language>('en');
   const [loading, setLoading] = useState(false);
   const [dbInitializing, setDbInitializing] = useState(true);
@@ -43,13 +44,13 @@ const App: React.FC = () => {
       if (isIpaMode) {
         setDisplayIpa(text);
       } else {
-        const ipa = await convertToIPA(text, language);
+        const ipa = await convertToIPA(text, language, useDictionary);
         if (active) setDisplayIpa(ipa);
       }
     };
     update();
     return () => { active = false; };
-  }, [text, language, isIpaMode]);
+  }, [text, language, isIpaMode, useDictionary]);
 
   // Synthesis Handler - Never blocks on dbInitializing
   const handleSynthesize = async () => {
@@ -61,7 +62,7 @@ const App: React.FC = () => {
 
     try {
       // renderAudio uses convertToIPA internally which handles rule-based fallback
-      const buffer = await renderAudio(text, config, language, isIpaMode);
+      const buffer = await renderAudio(text, config, language, isIpaMode, useDictionary);
       const data = buffer.getChannelData(0);
       const wavBlob = bufferToWave(buffer, data.length);
       const url = URL.createObjectURL(wavBlob);
@@ -121,6 +122,7 @@ const App: React.FC = () => {
                 text={text} setText={setText}
                 language={language} setLanguage={setLanguage}
                 isIpaMode={isIpaMode} setIsIpaMode={setIsIpaMode}
+                useDictionary={useDictionary} setUseDictionary={setUseDictionary}
                 loading={loading}
                 error={error}
                 dbInitializing={dbInitializing}

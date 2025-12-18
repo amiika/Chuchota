@@ -1,5 +1,4 @@
-
-import { getIPAFromDB } from '../db';
+import { getIPAFromDB, findLongestPrefixMatch } from '../db';
 
 // Japanese Number Logic
 const JA_NUMS = ["zero", "ichi", "ni", "san", "yon", "go", "roku", "nana", "hachi", "kyuu"];
@@ -23,7 +22,6 @@ export function numberToWords(n: number): string {
 }
 
 const KANA_COMPOUNDS: Record<string, string> = {
-  // Correcting typos (mixed hiragana/katakana) and removing duplicated blocks
   'きゃ': 'kya', 'きゅ': 'kyu', 'きょ': 'kyo', 'しゃ': 'sha', 'しゅ': 'shu', 'しょ': 'sho',
   'ちゃ': 'cha', 'ちゅ': 'chu', 'ちょ': 'cho', 'にゃ': 'nya', 'にゅ': 'nyu', 'にょ': 'nyo',
   'ひゃ': 'hya', 'ひゅ': 'hyu', 'ひょ': 'hyo', 'みゃ': 'mya', 'みゅ': 'myu', 'みょ': 'myo',
@@ -31,18 +29,18 @@ const KANA_COMPOUNDS: Record<string, string> = {
   'じゃ': 'ja', 'じゅ': 'ju', 'じょ': 'jo', 'びゃ': 'bya', 'びゅ': 'byu', 'びょ': 'byo',
   'ぴゃ': 'pya', 'ぴゅ': 'pyu', 'ぴょ': 'pyo', 'キャ': 'kya', 'キュ': 'kyu', 'キョ': 'kyo',
   'シャ': 'sha', 'シュ': 'shu', 'ショ': 'sho', 'チャ': 'cha', 'チュ': 'chu', 'チョ': 'cho',
-  'ニャ': 'nya', 'ニュ': 'nyu', 'ニョ': 'nyo', 'ヒャ': 'hya', 'ヒュ': 'hyu', 'ヒョ': 'hyo',
+  'ニャ': 'nya', 'ニュ': 'nyu', 'ニョ': 'nyo', 'ヒャ': 'hya', 'ヒュ': 'hyu', 'ヒょ': 'hyo',
   'ミャ': 'mya', 'ミュ': 'myu', 'ミョ': 'myo', 'リャ': 'rya', 'リュ': 'ryu', 'リョ': 'ryo',
-  'ギャ': 'gya', 'ギュ': 'gyu', 'ギョ': 'gyo', 'ジャ': 'ja', 'ジュ': 'ju', 'ジョ': 'jo',
-  'ビャ': 'bya', 'ビュ': 'byu', 'ビョ': 'byo', 'ピャ': 'pya', 'ピゅ': 'pyu', 'ピョ': 'pyo',
+  'ギャ': 'gya', 'ギュ': 'gyu', 'ギョ': 'gjo', 'ジャ': 'ja', 'ジュ': 'ju', 'ジョ': 'jo',
+  'ビャ': 'bya', 'ビュ': 'byu', 'ビョ': 'byo', 'ピゃ': 'pya', 'ピュ': 'pyu', 'ピョ': 'pyo',
   'ファ': 'fa', 'フィ': 'fi', 'フェ': 'fe', 'フォ': 'fo'
 };
 
 const KANA_BASIC: Record<string, string> = {
-  // Corrected: Splitting into clear Hiragana and Katakana sections to avoid duplicate keys and typos.
   // Hiragana
   'あ':'a', 'い':'i', 'う':'u', 'え':'e', 'お':'o', 'か':'ka', 'き':'ki', 'く':'ku', 'け':'ke', 'こ':'ko',
   'さ':'sa', 'し':'shi', 'す':'su', 'せ':'se', 'そ':'so', 'た':'ta', 'ち':'chi', 'つ':'tsu', 'て':'te', 'と':'to',
+  // Fixed typo: 'ni' key should be 'に'
   'な':'na', 'に':'ni', 'ぬ':'nu', 'ね':'ne', 'の':'no', 'は':'ha', 'ひ':'hi', 'ふ':'fu', 'へ':'he', 'ほ':'ho',
   'ま':'ma', 'み':'mi', 'む':'mu', 'め':'me', 'も':'mo', 'や':'ya', 'ゆ':'yu', 'よ':'yo', 'ら':'ra', 'り':'ri',
   'る':'ru', 'れ':'re', 'ろ':'ro', 'わ':'wa', 'を':'o', 'ん':'n', 'が':'ga', 'ぎ':'gi', 'ぐ':'gu', 'げ':'ge', 'ご':'go',
@@ -86,42 +84,45 @@ const ROMAJI_MAP: Record<string, string> = {
   'bo': 'bo', 'pa': 'pa', 'pi': 'pi', 'pu': 'pɯ', 'pe': 'pe', 'po': 'po', 'kya': 'kja', 'kyu': 'kjɯ', 'kyo': 'kjo',
   'sha': 'ʃa', 'shu': 'ʃɯ', 'sho': 'ʃo', 'cha': 'tʃa', 'chu': 'tʃɯ', 'cho': 'tʃo', 'nya': 'nja', 'nyu': 'njɯ', 'nyo': 'njo',
   'hya': 'hja', 'hyu': 'hjɯ', 'hyo': 'hjo', 'mya': 'mja', 'myu': 'mjɯ', 'myo': 'mjo', 'rya': 'ɾja', 'ryu': 'ɾjɯ', 'ryo': 'ɾjo',
-  'gya': 'gja', 'gyu': 'gjɯ', 'gyo': 'gjo', 'ja': 'dʒa', 'ju': 'dʒɯ', 'jo': 'dʒo', 'bya': 'bja', 'byu': 'bjɯ', 'byo': 'bjo',
-  'pya': 'pja', 'pyu': 'pjɯ', 'pyo': 'pjo',
+  'gya': 'gja', 'ギャ': 'gja', 'ギュ': 'gjɯ', 'ギョ': 'gjo', 'ジャ': 'dʒa', 'ジュ': 'dʒɯ', 'ジョ': 'dʒo', 'ビャ': 'bja', 'ビュ': 'bjɯ', 'ビョ': 'bjo',
+  'ピャ': 'pja', 'ピュ': 'pjɯ', 'ピョ': 'pjo',
 };
 
-export async function japaneseToIPA(text: string): Promise<string> {
-    // Normalization handles full-width etc. but keeps kanji/symbols intact
+async function getJapaneseIPA(token: string, useDictionary: boolean): Promise<string> {
+    if (useDictionary) {
+        // 1. Exact Match or Forward Prefix Match
+        const direct = await getIPAFromDB(token, 'ja', true);
+        if (direct) return direct.replace(/^\/|\/$/g, '');
+
+        // 2. Longest Prefix (Root) Match
+        const rootMatch = await findLongestPrefixMatch(token, 'ja');
+        if (rootMatch && rootMatch.word.length > 2) {
+            return rootMatch.ipa.replace(/^\/|\/$/g, '');
+        }
+    }
+
+    // Fallback to manual transcription
+    let output = ""; let i = 0;
+    while (i < token.length) {
+        if (i + 3 <= token.length) { const sub = token.substring(i, i+3); if (ROMAJI_MAP[sub]) { output += ROMAJI_MAP[sub]; i += 3; continue; } }
+        if (i + 2 <= token.length) { 
+            const sub = token.substring(i, i+2); 
+            if (ROMAJI_MAP[sub]) { output += ROMAJI_MAP[sub]; i += 2; continue; }
+            if (token[i] === token[i+1] && /[^aeioun]/.test(token[i])) { output += "ʔ"; i++; continue; }
+            if (token[i] === 'o' && token[i+1] === 'u') { output += "oː"; i += 2; continue; }
+            if (token[i] === 'e' && token[i+1] === 'i') { output += "eː"; i += 2; continue; }
+        }
+        const char = token[i]; output += ROMAJI_MAP[char] || char; i++;
+    }
+    return output;
+}
+
+export async function japaneseToIPA(text: string, useDictionary: boolean = true): Promise<string> {
     let normalized = normalizeJapanese(text.toLowerCase());
-    
-    // Improved tokenization to catch symbols like ・, 々, 〆, and kanji
-    // [^\s.,!?;]+ matches any sequence of non-whitespace/non-punctuation characters
     const tokens = normalized.match(/[^\s.,!?;]+|[.,!?;]|\s+/g) || [];
-    
     const results = await Promise.all(tokens.map(async (token) => {
         if (!token.trim() || /^[.,!?;]$/.test(token)) return token;
-        
-        const fromDB = await getIPAFromDB(token, 'ja');
-        if (fromDB) {
-            // Handle "/ipa1/, /ipa2/" format: pick first and strip slashes
-            const parts = fromDB.split(',');
-            const first = parts[0].trim();
-            return first.replace(/^\/|\/$/g, '');
-        }
-        
-        let output = ""; let i = 0;
-        while (i < token.length) {
-            if (i + 3 <= token.length) { const sub = token.substring(i, i+3); if (ROMAJI_MAP[sub]) { output += ROMAJI_MAP[sub]; i += 3; continue; } }
-            if (i + 2 <= token.length) { 
-                const sub = token.substring(i, i+2); 
-                if (ROMAJI_MAP[sub]) { output += ROMAJI_MAP[sub]; i += 2; continue; }
-                if (token[i] === token[i+1] && /[^aeioun]/.test(token[i])) { output += "ʔ"; i++; continue; }
-                if (token[i] === 'o' && token[i+1] === 'u') { output += "oː"; i += 2; continue; }
-                if (token[i] === 'e' && token[i+1] === 'i') { output += "eː"; i += 2; continue; }
-            }
-            const char = token[i]; output += ROMAJI_MAP[char] || char; i++;
-        }
-        return output;
+        return await getJapaneseIPA(token, useDictionary);
     }));
     return results.join('');
 }
