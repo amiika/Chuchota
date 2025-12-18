@@ -12,7 +12,7 @@ export const HelpModal: React.FC<HelpModalProps> = ({ onClose }) => (
             <div className="p-6 border-b border-slate-700 flex justify-between items-center bg-slate-800 sticky top-0">
                 <h2 className="text-xl font-bold text-cyan-400 flex items-center gap-2">
                     <Info className="w-5 h-5" />
-                    About Chuchota
+                    About <a href="https://github.com/amiika/Chuchota" target="_blank">Chuchota</a>
                 </h2>
                 <button onClick={onClose} className="text-slate-400 hover:text-white">
                     <X className="w-6 h-6" />
@@ -20,17 +20,17 @@ export const HelpModal: React.FC<HelpModalProps> = ({ onClose }) => (
             </div>
             <div className="p-6 space-y-6 text-slate-300 leading-relaxed">
                 <p>
-                    <strong>Chuchota</strong> is a specialized development toolkit designed for refining the Klatt Formant Synthesizer. 
+                    <strong>Chuchota</strong> is <a className="underline" href="https://github.com/amiika/Chuchota" target="_blank">open source</a> development toolkit designed for refining the Klatt Formant Synthesizer. 
                     It is not just a text-to-speech tool, but a workbench for crafting the acoustic definition of speech itself.
                 </p>
 
                 <div>
                     <h3 className="text-lg font-bold text-white mb-2 flex items-center gap-2">
                         <Edit3 className="w-4 h-4 text-cyan-500" /> 
-                        1. Phoneme Refinement (Phoneme Editor)
+                        1. Phoneme Development
                     </h3>
                     <p className="text-sm">
-                        This is the core engineering tool. It allows you to fine-tune the acoustic properties of specific IPA symbols.
+                        This is the core phoneme refinement tool. It allows you to fine-tune the acoustic properties of specific IPA symbols.
                         If a vowel sounds "off" or a consonant lacks punch, you can adjust its formants (F1-F6), bandwidths, and source amplitudes here.
                         Changes apply immediately to the current session.
                     </p>
@@ -44,11 +44,12 @@ export const HelpModal: React.FC<HelpModalProps> = ({ onClose }) => (
                 <div>
                     <h3 className="text-lg font-bold text-white mb-2 flex items-center gap-2">
                         <Settings2 className="w-4 h-4 text-purple-500" /> 
-                        2. Persona Creation (Voice Designer)
+                        2. Voice Designer
                     </h3>
                     <p className="text-sm">
                         This panel controls the global voice characteristics that are applied on top of the base phonemes.
                         It simulates different vocal tract sizes and prosody styles. Use this to define "Personas" for end-users.
+                        You decide which parameters and ranges are available for users, but this is out of scope for this tool.
                     </p>
                     <ul className="list-disc list-inside mt-2 text-sm text-slate-400 pl-4">
                         <li>Adjust pitch, throat size, and effects like flutter or breathiness.</li>

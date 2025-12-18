@@ -15,6 +15,10 @@ WIP. Proof of Concept.
   * Override base phonemes for additional variance
   * Copy & Paste new personas for development
 
+## NOTE
+
+* IPA dictionaries in /dictionaries are dummy data. For production use real IPA dictionaries for example from [IPA-Dict](https://github.com/open-dict-data/ipa-dict).
+
 # Credits
 
 * [Dennis H. Klatt](https://en.wikipedia.org/wiki/Dennis_H._Klatt)
