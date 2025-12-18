@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo } from 'react';
 import { Edit3, Copy, Check, SlidersHorizontal, Zap, Play } from 'lucide-react';
 import { IPA_DATA, KlattFrame } from '../services/ipaData';
@@ -78,7 +79,7 @@ export const IpaEditor: React.FC<IpaEditorProps> = ({ selectedChar, onSelectChar
 
     const handleCopy = () => {
         const groups: (keyof KlattFrame)[][] = [
-            ['isStop', 'isNasal', 'copyAdjacent', 'voiceAmplitude', 'aspirationAmplitude', 'fricationAmplitude', 'parallelBypass'],
+            ['isStop', 'isNasal', 'isVowel', 'isVoiced', 'copyAdjacent', 'voiceAmplitude', 'aspirationAmplitude', 'fricationAmplitude', 'parallelBypass'],
             ['cf1', 'cf2', 'cf3', 'cf4', 'cf5', 'cf6'],
             ['cb1', 'cb2', 'cb3', 'cb4', 'cb5', 'cb6'],
             ['cfNP', 'cbNP', 'cfN0', 'cbN0', 'caNP'],
@@ -210,7 +211,7 @@ export const IpaEditor: React.FC<IpaEditorProps> = ({ selectedChar, onSelectChar
                      <div className="p-4 bg-slate-900/50 rounded-lg border border-slate-700/50 space-y-3">
                         <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Properties</h3>
                         <div className="grid grid-cols-2 gap-2">
-                            {['isStop', 'isNasal', 'copyAdjacent'].map(k => (
+                            {['isStop', 'isNasal', 'isVowel', 'isVoiced', 'copyAdjacent'].map(k => (
                                 <label key={k} className="flex items-center gap-2 cursor-pointer group">
                                     <input 
                                         type="checkbox" 

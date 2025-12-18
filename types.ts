@@ -62,11 +62,14 @@ export interface PhonemeKeyframe {
     voicing: boolean; // True for vowels/voiced consonants
     frication: boolean; // True for fricatives
     aspiration: boolean; // True for H, P, T, K aspiration phases
+    isVowel?: boolean;
+    isVoiced?: boolean;
 }
 
 export interface VoiceConfig {
     pitch: number;      // Base Hz (e.g., 130)
     speed: number;      // Duration multiplier (e.g., 1.0)
+    declination: number; // gradual F0 drop, 0.0 to 1.0
     throat: number;     // Formant Frequency scale (e.g. 1.0)
     mouth: number;      // Open Phase Ratio scale (e.g., 0.5 - 0.9)
     tongue: number;     // F2 scale (e.g., 1.0)

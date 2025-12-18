@@ -19,13 +19,13 @@ function processNumbers(text: string, lang: Language): string {
     return text.replace(/\d+/g, (m) => numFunc(parseInt(m)));
 }
 
-export async function convertToIPA(text: string, lang: Language): Promise<string> {
+export async function convertToIPA(text: string, lang: Language, useDictionary: boolean = true): Promise<string> {
   const expanded = processNumbers(text, lang);
   switch (lang) {
-    case 'ja': return await japaneseToIPA(expanded);
-    case 'fi': return await finnishToIPA(expanded);
-    case 'fr': return await frenchToIPA(expanded);
+    case 'ja': return await japaneseToIPA(expanded, useDictionary);
+    case 'fi': return await finnishToIPA(expanded, useDictionary);
+    case 'fr': return await frenchToIPA(expanded, useDictionary);
     case 'en': 
-    default: return await englishToIPA(expanded);
+    default: return await englishToIPA(expanded, useDictionary);
   }
 }

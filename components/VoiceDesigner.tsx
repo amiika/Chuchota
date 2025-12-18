@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Settings2, RotateCcw, Users, Zap, Copy, Check } from 'lucide-react';
 import { VoiceConfig } from '../types';
@@ -106,6 +107,11 @@ export const VoiceDesigner: React.FC<VoiceDesignerProps> = ({
                         label="SPEED" 
                         min={0.1} max={5.0} step={0.01} val={config.speed} 
                         onChange={(v: number) => updateConfig('speed', v)} 
+                    />
+                    <Control 
+                        label="DECLINATION (PITCH DROP)" 
+                        min={0.0} max={0.8} step={0.01} val={config.declination} 
+                        onChange={(v: number) => updateConfig('declination', v)} 
                     />
                 </div>
 

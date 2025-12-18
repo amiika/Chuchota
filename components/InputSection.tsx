@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Globe, Keyboard, Languages, Wand2, Database } from 'lucide-react';
+import { Globe, Keyboard, Languages, Wand2, Database, Book, BookOpen } from 'lucide-react';
 import { Language, LANGUAGES } from '../services/textToIpa';
 import { IPA_DATA } from '../services/ipaData';
 import { VoiceConfig } from '../types';
@@ -12,6 +12,8 @@ interface InputSectionProps {
     setLanguage: (l: Language) => void;
     isIpaMode: boolean;
     setIsIpaMode: (b: boolean) => void;
+    useDictionary: boolean;
+    setUseDictionary: (b: boolean) => void;
     loading: boolean;
     dbInitializing?: boolean;
     error: string | null;
@@ -24,6 +26,7 @@ interface InputSectionProps {
 
 export const InputSection: React.FC<InputSectionProps> = ({
     text, setText, language, setLanguage, isIpaMode, setIsIpaMode,
+    useDictionary, setUseDictionary,
     loading, dbInitializing, error, displayIpa, selectedIpa, setSelectedIpa, config,
     onSynthesize
 }) => {
@@ -33,6 +36,20 @@ export const InputSection: React.FC<InputSectionProps> = ({
                 <div className="flex justify-between items-center mb-2">
                     <label className="text-sm font-medium text-slate-400">INPUT</label>
                     <div className="flex gap-2">
+                        {!isIpaMode && (
+                            <button 
+                                onClick={() => setUseDictionary(!useDictionary)}
+                                className={`flex items-center gap-2 text-xs px-3 py-1 rounded-full transition-all border ${
+                                    useDictionary 
+                                    ? 'bg-emerald-900/30 border-emerald-500/50 text-emerald-400' 
+                                    : 'bg-slate-700 border-slate-600 text-slate-400'
+                                }`}
+                                title={useDictionary ? "Dictionary enabled (Lexicon Lookup)" : "Dictionary disabled (Rule-based G2P only)"}
+                            >
+                                {useDictionary ? <BookOpen className="w-3 h-3"/> : <Book className="w-3 h-3"/>}
+                                {useDictionary ? 'LEXICON ON' : 'LEXICON OFF'}
+                            </button>
+                        )}
                         <div className="relative">
                             <Globe className="absolute left-2 top-1.5 w-3 h-3 text-cyan-500" />
                             <select 
