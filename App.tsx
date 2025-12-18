@@ -34,7 +34,9 @@ const App: React.FC = () => {
 
   // Trigger background dictionary sync
   useEffect(() => {
-    syncDictionaries().finally(() => setDbInitializing(false));
+    syncDictionaries()
+      .catch(err => console.warn("[Chuchota] Sync warning:", err))
+      .finally(() => setDbInitializing(false));
   }, []);
 
   // Update IPA preview on text/language changes
@@ -45,7 +47,7 @@ const App: React.FC = () => {
         if (isIpaMode) {
           setDisplayIpa(text);
         } else {
-          // Preview doesn't wait for DB if it's busy
+          // Preview skips DB if it's currently initializing
           const ipa = await convertToIPA(text, language, useDictionary && !dbInitializing);
           if (active) setDisplayIpa(ipa);
         }
@@ -57,7 +59,7 @@ const App: React.FC = () => {
     return () => { active = false; };
   }, [text, language, isIpaMode, useDictionary, dbInitializing]);
 
-  // Synthesis Handler - Never blocks on dbInitializing
+  // Synthesis Handler - Robust fallback to rule-based engine
   const handleSynthesize = async () => {
     if (!text) return;
     setLoading(true);
@@ -71,7 +73,7 @@ const App: React.FC = () => {
     setChannelData(null);
 
     try {
-      // Only use dictionary if it's fully ready to avoid DB lock blocking audio thread
+      // Use dictionary ONLY if ready. Fallback to rules is automatic inside renderAudio -> convertToIPA
       const effectiveUseDictionary = useDictionary && !dbInitializing;
       const buffer = await renderAudio(text, config, language, isIpaMode, effectiveUseDictionary);
       const data = buffer.getChannelData(0);
@@ -122,6 +124,11 @@ const App: React.FC = () => {
     setTimeout(() => setPersonaCopied(false), 2000);
   };
 
+  const handleClearText = () => {
+    setText('');
+    setError(null);
+  };
+
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 p-4 md:p-8 lg:px-24 xl:px-48 flex flex-col pb-12">
       <Header onOpenHelp={() => setShowHelp(true)} />
@@ -141,6 +148,7 @@ const App: React.FC = () => {
                 selectedIpa={selectedIpa} setSelectedIpa={setSelectedIpa}
                 config={config}
                 onSynthesize={handleSynthesize}
+                onClearText={handleClearText}
             />
 
             {audioUrl && <WaveformDisplay audioUrl={audioUrl} data={channelData} />}

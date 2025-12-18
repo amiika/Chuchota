@@ -27,10 +27,25 @@
       ::-webkit-scrollbar-thumb:hover {
         background: #64748b; 
       }
+
+      /* Hide arrows in Chrome, Safari, Edge, Opera */
+      input::-webkit-outer-spin-button,
+      input::-webkit-inner-spin-button {
+        -webkit-appearance: none;
+        margin: 0;
+      }
+      /* Hide arrows in Firefox */
+      input[type=number] {
+        -moz-appearance: textfield;
+      }
     </style>
 </head>
   <body>
     <div id="root"></div>
   </body>
+<<<<<<< HEAD
   <script type="module" src="./index.tsx"></script>
 </html>
+=======
+</html>
+>>>>>>> main

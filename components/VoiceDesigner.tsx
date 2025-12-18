@@ -110,7 +110,7 @@ export const VoiceDesigner: React.FC<VoiceDesignerProps> = ({
                     />
                     <Control 
                         label="DECLINATION (PITCH DROP)" 
-                        min={0.0} max={0.8} step={0.01} val={config.declination} 
+                        min={0.0} max={0.5} step={0.01} val={config.declination} 
                         onChange={(v: number) => updateConfig('declination', v)} 
                     />
                 </div>
