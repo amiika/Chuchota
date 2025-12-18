@@ -41,28 +41,39 @@ const App: React.FC = () => {
   useEffect(() => {
     let active = true;
     const update = async () => {
-      if (isIpaMode) {
-        setDisplayIpa(text);
-      } else {
-        const ipa = await convertToIPA(text, language, useDictionary);
-        if (active) setDisplayIpa(ipa);
+      try {
+        if (isIpaMode) {
+          setDisplayIpa(text);
+        } else {
+          // Preview doesn't wait for DB if it's busy
+          const ipa = await convertToIPA(text, language, useDictionary && !dbInitializing);
+          if (active) setDisplayIpa(ipa);
+        }
+      } catch (e) {
+        if (active) setDisplayIpa("...");
       }
     };
     update();
     return () => { active = false; };
-  }, [text, language, isIpaMode, useDictionary]);
+  }, [text, language, isIpaMode, useDictionary, dbInitializing]);
 
   // Synthesis Handler - Never blocks on dbInitializing
   const handleSynthesize = async () => {
     if (!text) return;
     setLoading(true);
     setError(null);
+    
+    // Clean up previous URL to prevent memory leaks
+    if (audioUrl) {
+      URL.revokeObjectURL(audioUrl);
+    }
     setAudioUrl(null);
     setChannelData(null);
 
     try {
-      // renderAudio uses convertToIPA internally which handles rule-based fallback
-      const buffer = await renderAudio(text, config, language, isIpaMode, useDictionary);
+      // Only use dictionary if it's fully ready to avoid DB lock blocking audio thread
+      const effectiveUseDictionary = useDictionary && !dbInitializing;
+      const buffer = await renderAudio(text, config, language, isIpaMode, effectiveUseDictionary);
       const data = buffer.getChannelData(0);
       const wavBlob = bufferToWave(buffer, data.length);
       const url = URL.createObjectURL(wavBlob);

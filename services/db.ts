@@ -53,8 +53,17 @@ export async function getIPAFromDB(word: string, lang: string): Promise<string |
     const request = store.get([lang, word.toLowerCase()]);
     
     return new Promise((resolve) => {
-      request.onsuccess = () => resolve(request.result?.ipa);
-      request.onerror = () => resolve(undefined);
+      // Safety timeout: if the DB is locked by a write transaction, don't hang the TTS
+      const timeout = setTimeout(() => resolve(undefined), 100);
+      
+      request.onsuccess = () => {
+        clearTimeout(timeout);
+        resolve(request.result?.ipa);
+      };
+      request.onerror = () => {
+        clearTimeout(timeout);
+        resolve(undefined);
+      };
     });
   } catch (e) {
     return undefined;
